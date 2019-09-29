@@ -1,0 +1,168 @@
+---
+title: "DATA 607 Week5Assignment"
+author: "Banu Boopalan"
+date: "9/29/2019"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+  ioslides_presentation: default
+  pdf_document: default
+  slidy_presentation: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(dplyr)
+library(stringr)
+library(readr)
+library(kableExtra)
+library(ggplot2)
+library(reshape2)
+
+```
+
+## Section1: Read my CSV file from Github and Reassign missing value for column x
+
+```{r}
+
+myurl <- "https://raw.githubusercontent.com/BanuB/Week5AssignmentDATA607/master/Sample4.csv"
+csvdata <- read.csv(file=myurl, header=TRUE,sep=",",stringsAsFactors = FALSE,na.strings=c("NA"))
+filename <- "flightanalysis.csv"
+
+str(csvdata)
+head(csvdata)
+
+#Reassign missing value for column X
+csvdata[2,1] <- csvdata$X[1]
+csvdata[5,1] <- csvdata$X[4]
+
+```
+
+## Section2: Tidy Step 1 to gather, mutate and omit to remove NA and rename column names Airline Flight_Status
+
+
+```{r}
+#This csvdata appears to be wide since variable (represented as destinationcity) is such that each city is a variable. We can convert the values appearing in each column as one column variable and bring the values to be populated for that column variable.
+#change layout of the dataset from wide to long format using tidyr. Remove NA rows
+long_data <- csvdata %>% gather(Destination_City, "Num_of_flights", Los.Angeles:Seattle)%>% 
+  mutate(Num_of_flights = ifelse(Num_of_flights == "", NA, Num_of_flights))%>% 
+  na.omit 
+
+#assign column names
+colnames(long_data)[1] <- "Airline" 
+colnames(long_data)[2] <- "Flight_Status"
+```
+
+## Section3: Tidy Step 2 change type of column to Numeric for Num_of_flights, use spread() Flight_Status, replace space in "on time" to aid in easy reading
+
+
+```{r}
+#change type to numeric 
+long_data
+long_data[,"Num_of_flights"]  <- as.numeric(parse_number(long_data$Num_of_flights))
+sapply(long_data,mode)
+
+#use tidyR to spread the flight status
+long_data1 <- long_data %>% spread(Flight_Status, Num_of_flights)
+long_data1
+
+#replace the on time with _ so there is no space in the column name
+names(long_data1) <- names(long_data1) %>% str_replace_all("\\s","_") 
+sapply(long_data1,mode)
+
+long_data1 %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+```
+
+
+## Section5: Now we have long_data2 in our tidy format for analysis. Group by Airline to find percent delay and percent on time value
+
+
+```{r}
+#Arrange By Destination_City
+long_data2 <- long_data1 %>% arrange(Destination_City)
+
+
+long_data3 <- long_data2 %>%
+  group_by(Airline) %>%
+  mutate(cum_delayed = cumsum(delayed), cum_ontime = cumsum(on_time)) %>%
+  mutate (total = delayed + on_time, percentdelay = round(delayed/(delayed+on_time)*100,2), percentontime = round(on_time/(delayed+on_time)*100,2))
+long_data3 %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+
+#report percentdelay by DestinationCity and Airline :AM WEST HAS HIGHER DELAY THAN ALASKA FOR EACH CITY
+ggplot(long_data3,aes(x=Destination_City,y=percentdelay))+geom_bar(aes(fill=Airline),stat="identity",position="dodge")+geom_text(aes(label=..y..),stat="identity",vjust=-.5,hjust=0)+labs(x="Destination_City",y="percentdelay",fill="Airline") + ggtitle("percentdelay by DestinationCity: AM WEST HAS HIGHER DELAY THAN ALASKA FOR EACH CITY")
+
+#report percentontime by DestinationCity and Airline 
+ggplot(long_data3,aes(x=Destination_City,y=percentontime))+geom_bar(aes(fill=Airline),stat="identity",position="dodge")+geom_text(aes(label=..y..),check_overlap = FALSE,size =3, stat="identity",vjust=-.5,hjust=.5)+labs(x="Destination_City",y="percentontime",fill="Airline")  +ggtitle("percentontime by DestinationCity")
+
+#report flightsflown to each city by Airline : AM WEST HAS FLOWN THE MOST TO PHOENIX WHEREAS ALASKA IS FLYING THE MOST TO SEATTLE
+ggplot(long_data3)+ geom_bar(aes(x=Airline, y=total,fill=Airline),stat = "identity") + facet_wrap(~Destination_City,nrow=2)+ ggtitle("flights flown to each city by Airline: AM WEST HAS FLOWN THE MOST TO \n\ PHOENIX WHEREAS ALASKA IS FLYING THE MOST TO SEATTLE")
+
+```
+
+## Section6: Perform summary report stats
+
+
+```{r}
+#summarize Analysis 1 - group by Airline, get total flights delayed and on time
+summarystats <- long_data1 %>% 
+  group_by(Airline) %>% 
+  summarize(total_flights_delayed = sum(delayed), total_flights_ontime = sum(on_time))
+summarystats
+summarystats %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+
+#summarize Analysis 2 - group by Destination_City, get total flights delayed and on time
+summarystats1 <- long_data1 %>% 
+  group_by(Destination_City) %>% 
+  summarize(total_flights_delayed = sum(delayed), total_flights_ontime = sum(on_time))
+summarystats
+summarystats1 %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+
+#summarize the airline and the delayed% of an airline and delayed% of airlineontime
+summarystats2 <- summarystats %>% mutate(totalflights = total_flights_delayed + total_flights_ontime, 
+                        airlinedelay = round((total_flights_delayed / totalflights) * 100, 2),
+                        airlineontime = round((total_flights_ontime / totalflights) * 100, 2))
+summarystats2 %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+
+#summarize the airline and the delayed% and ontime% of flying to a city
+summarystats3 <- summarystats1   %>% mutate(totalflights = total_flights_delayed + total_flights_ontime, 
+                         citydelay = round((total_flights_delayed / totalflights) * 100, 2),
+                         cityontime = round((total_flights_ontime/ totalflights) * 100, 2))
+summarystats3 %>% kable() %>% kable_styling(bootstrap_options = c("striped","hover","condensed"))
+
+```
+
+
+## Section7: Plot using melt and select and ANALYSIS 
+1. AM WEST has more flights into PHOENIX (TOTAL = 5255). Phoenix overall city delay is (7.78%).   
+2. ALASKA has more flights into SEATTLE (TOTAL = 2146). Seattle overall city delay is (15.20%).
+3. While AM WEST HAS HIGHER DELAY THAN ALASKA FOR EACH CITY, the overall Airline delay for all destinations is higher on ALASKA(13.27) AND AM WEST IS (10.89). Since the ontime arrival% is comparable across each city for both airline, Alaska is disadvantaged because of a smaller fleet flying as AM WEST overall %delay is better due to its larger fleet or total flights flown. A traveller could rely on ontimearrival%/CITY as a good predictor when selecting flights to fly through either Alaska or AMWEST or simple Alaska could guide a customer to its lower delay% across each city through its Airline. 
+
+
+```{r}
+#AM WEST has MORE FLIGHTS INTO PHOENIX THAN ALASKA WHEREAS ALASKA IS FLYING TO SEATTLE THE MOST
+showcounts1 <- select(long_data3,Airline, Destination_City,total) %>% 
+  melt() %>%
+  ggplot(aes(x = Destination_City, y = value, fill = variable))+
+  theme(axis.text.x=element_text(angle=90,hjust=1))+
+  geom_bar(stat = 'identity')+
+  geom_text(size =5, aes(label=value), position = position_stack(vjust = 0.5)) +
+  labs(y = "flights") +
+  facet_grid(~Airline)
+
+showcounts2 <- long_data2 %>% 
+  melt() %>%
+  ggplot(aes(x = Destination_City, y = value, fill = variable))+ 
+  theme(axis.text.x=element_text(angle=90,hjust=1))+
+  geom_bar(stat = 'identity')+
+  geom_text(size =4, aes(label=value), position = position_stack(vjust = 0.5)) +
+  labs(y = "flights") +
+  facet_grid(~Airline) 
+showcounts1
+showcounts2
+  
+
+```
+
